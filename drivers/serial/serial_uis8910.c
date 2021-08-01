@@ -116,7 +116,7 @@ static int uis8910_serial_putc(struct udevice *dev, const char ch)
 	struct uis8910_serial_plat *plat = dev_get_plat(dev);
 	struct uis8910_uart *const uart = plat->reg;
 
-	if ((readb(&uart->uart_txfifo_stat) & 0xff) == 0)
+	if ((readb(&uart->uart_txfifo_stat) & 0xff) > 127)
 		return -EAGAIN;
 
 	writeb(ch, &uart->uart_tx);
@@ -188,7 +188,7 @@ static inline void _debug_uart_putc(int ch)
 {
 	struct uis8910_uart *uart = (struct uis8910_uart *)CONFIG_DEBUG_UART_BASE;
 
-	while (readb(&uart->uart_txfifo_stat) == 0);
+	while ((readb(&uart->uart_txfifo_stat) & 0xff) > 127);
 	writeb(ch, &uart->uart_tx);
 }
 

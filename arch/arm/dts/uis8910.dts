@@ -7,7 +7,7 @@
 	compatible = "Unisoc,uis8910", "rda,rda8910m";
 
 	chosen {
-		stdout-path = "serial0:115200n8";
+		stdout-path = "serial:115200n8";
 	};
 
 	serial@8816000 {

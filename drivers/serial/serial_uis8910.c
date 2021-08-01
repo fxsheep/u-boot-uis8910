@@ -1,4 +1,3 @@
-#if 1
 #include <common.h>
 #include <dm.h>
 #include <errno.h>
@@ -11,78 +10,80 @@
 
 DECLARE_GLOBAL_DATA_PTR;
 
-#define RX_FIFO_COUNT_SHIFT	0
-#define RX_FIFO_COUNT_MASK	(0xff << RX_FIFO_COUNT_SHIFT)
-#define RX_FIFO_FULL		(1 << 8)
-#define TX_FIFO_COUNT_SHIFT	16
-#define TX_FIFO_COUNT_MASK	(0xff << TX_FIFO_COUNT_SHIFT)
-#define TX_FIFO_FULL		(1 << 24)
+struct uis8910_uart {
+    uint32_t uart_tx;          // 0x00000000
+    uint32_t uart_rx;          // 0x00000004
+    uint32_t uart_baud;        // 0x00000008
+    uint32_t uart_conf;        // 0x0000000c
+    uint32_t uart_rxtrig;      // 0x00000010
+    uint32_t uart_txtrig;      // 0x00000014
+    uint32_t uart_delay;       // 0x00000018
+    uint32_t uart_status;      // 0x0000001c
+    uint32_t uart_rxfifo_stat; // 0x00000020
+    uint32_t uart_txfifo_stat; // 0x00000024
+    uint32_t uart_rxfifo_hdlc; // 0x00000028
+    uint32_t uart_at_status;   // 0x0000002c
+    uint32_t uart_swfc_cc;     // 0x00000030
+};
 
 /* Information about a serial port */
-struct uis8910_serial_platdata {
+struct uis8910_serial_plat {
 	struct uis8910_uart *reg;  /* address of registers in physical memory */
-	u8 port_id;     /* uart port number */
 };
 
-/*
- * The coefficient, used to calculate the baudrate on S5P UARTs is
- * calculated as
- * C = UBRDIV * 16 + number_of_set_bits_in_UDIVSLOT
- * however, section 31.6.11 of the datasheet doesn't recomment using 1 for 1,
- * 3 for 2, ... (2^n - 1) for n, instead, they suggest using these constants:
- */
-static const int udivslot[] = {
-	0,
-	0x0080,
-	0x0808,
-	0x0888,
-	0x2222,
-	0x4924,
-	0x4a52,
-	0x54aa,
-	0x5555,
-	0xd555,
-	0xd5d5,
-	0xddd5,
-	0xdddd,
-	0xdfdd,
-	0xdfdf,
-	0xffdf,
-};
+unsigned halCalcDivider20(unsigned input, unsigned output)
+{
+    if (input == 0 || output == 0 || output > (input / 6))
+        return 0;
+
+    unsigned delta = -1U;
+    unsigned rset = 1;
+    unsigned rdiv = 1;
+    for (unsigned nset = 16; nset >= 6; nset--)
+    {
+        unsigned ndiv = (input + (nset * output / 2)) / (nset * output);
+        if (ndiv <= 1 || ndiv >= (1 << 16))
+            continue;
+
+        unsigned out = input / (nset * ndiv);
+        unsigned diff = (out > output) ? out - output : output - out;
+        if (diff < delta)
+        {
+            delta = diff;
+            rset = nset;
+            rdiv = ndiv;
+        }
+    }
+
+    if (delta == -1U)
+        return 0;
+    return ((rset - 1) << 16) | (rdiv - 1);
+}
 
 static void __maybe_unused uis8910_serial_init(struct uis8910_uart *uart)
 {
-	/* enable FIFOs, auto clear Rx FIFO */
-	writel(0x3, &uart->ufcon);
-	writel(0, &uart->umcon);
-	/* 8N1 */
-	writel(0x3, &uart->ulcon);
-	/* No interrupts, no DMA, pure polling */
-	writel(0x245, &uart->ucon);
+	writel(550920, &uart->uart_conf);
+	writel(40, &uart->uart_delay);
+	writel(64, &uart->uart_rxtrig);
+	writel(0, &uart->uart_txtrig);
+	while ( (readl(&uart->uart_conf) & 0x6000) != 0 );
+	writel(readl(&uart->uart_status), &uart->uart_status);
 }
 
 static void __maybe_unused uis8910_serial_baud(struct uis8910_uart *uart, uint uclk,
 					   int baudrate)
 {
-	u32 val;
-
-	val = uclk / baudrate;
-
-	writel(val / 16 - 1, &uart->ubrdiv);
-
-	if (uis8910_uart_divslot())
-		writew(udivslot[val % 16], &uart->rest.slot);
-	else
-		writeb(val % 16, &uart->rest.value);
+    unsigned divider = halCalcDivider20(uclk, baudrate);
+	writel(divider, &uart->uart_baud);
 }
 
 #ifndef CONFIG_SPL_BUILD
 int uis8910_serial_setbrg(struct udevice *dev, int baudrate)
 {
-	struct uis8910_serial_platdata *plat = dev->platdata;
+	struct uis8910_serial_plat *plat = dev_get_plat(dev);
 	struct uis8910_uart *const uart = plat->reg;
 	u32 uclk;
-	uclk = 24000000;
+	uclk = 26000000;
 
 	uis8910_serial_baud(uart, uclk, baudrate);
 
@@ -91,7 +92,7 @@ int uis8910_serial_setbrg(struct udevice *dev, int baudrate)
 
 static int uis8910_serial_probe(struct udevice *dev)
 {
-	struct uis8910_serial_platdata *plat = dev->platdata;
+	struct uis8910_serial_plat *plat = dev_get_plat(dev);
 	struct uis8910_uart *const uart = plat->reg;
 
 	uis8910_serial_init(uart);
@@ -99,75 +100,52 @@ static int uis8910_serial_probe(struct udevice *dev)
 	return 0;
 }
 
-static int serial_err_check(const struct uis8910_uart *const uart, int op)
-{
-	unsigned int mask;
-
-	/*
-	 * UERSTAT
-	 * Break Detect	[3]
-	 * Frame Err	[2] : receive operation
-	 * Parity Err	[1] : receive operation
-	 * Overrun Err	[0] : receive operation
-	 */
-	if (op)
-		mask = 0x8;
-	else
-		mask = 0xf;
-
-	return readl(&uart->uerstat) & mask;
-}
-
 static int uis8910_serial_getc(struct udevice *dev)
 {
-	struct uis8910_serial_platdata *plat = dev->platdata;
+	struct uis8910_serial_plat *plat = dev_get_plat(dev);
 	struct uis8910_uart *const uart = plat->reg;
 
-	if (!(readl(&uart->ufstat) & RX_FIFO_COUNT_MASK))
+	if (!(readb(&uart->uart_rxfifo_stat) & 0xff))
 		return -EAGAIN;
 
-	serial_err_check(uart, 0);
-	return (int)(readb(&uart->urxh) & 0xff);
+	return (int)(readb(&uart->uart_rx) & 0xff);
 }
 
 static int uis8910_serial_putc(struct udevice *dev, const char ch)
 {
-	struct uis8910_serial_platdata *plat = dev->platdata;
+	struct uis8910_serial_plat *plat = dev_get_plat(dev);
 	struct uis8910_uart *const uart = plat->reg;
 
-	if (readl(&uart->ufstat) & TX_FIFO_FULL)
+	if ((readb(&uart->uart_txfifo_stat) & 0xff) == 0)
 		return -EAGAIN;
 
-	writeb(ch, &uart->utxh);
-	serial_err_check(uart, 1);
+	writeb(ch, &uart->uart_tx);
 
 	return 0;
 }
 
 static int uis8910_serial_pending(struct udevice *dev, bool input)
 {
-	struct uis8910_serial_platdata *plat = dev->platdata;
+	struct uis8910_serial_plat *plat = dev_get_plat(dev);
 	struct uis8910_uart *const uart = plat->reg;
-	uint32_t ufstat = readl(&uart->ufstat);
 
 	if (input)
-		return (ufstat & RX_FIFO_COUNT_MASK) >> RX_FIFO_COUNT_SHIFT;
+		return (int)(readb(&uart->uart_rxfifo_stat) & 0xff);
 	else
-		return (ufstat & TX_FIFO_COUNT_MASK) >> TX_FIFO_COUNT_SHIFT;
+		return (int)(readb(&uart->uart_txfifo_stat) & 0xff);
 }
 
-static int uis8910_serial_ofdata_to_platdata(struct udevice *dev)
+static int uis8910_serial_of_to_plat(struct udevice *dev)
 {
-	struct uis8910_serial_platdata *plat = dev->platdata;
+	struct uis8910_serial_plat *plat = dev_get_plat(dev);
 	fdt_addr_t addr;
 
-	addr = devfdt_get_addr(dev);
+	addr = dev_read_addr(dev);
 	if (addr == FDT_ADDR_T_NONE)
 		return -EINVAL;
 
 	plat->reg = (struct uis8910_uart *)addr;
-	plat->port_id = fdtdec_get_int(gd->fdt_blob, dev_of_offset(dev),
-					"id", dev->seq);
+
 	return 0;
 }
 
@@ -187,14 +165,14 @@ U_BOOT_DRIVER(serial_uis8910) = {
 	.name	= "serial_uis8910",
 	.id	= UCLASS_SERIAL,
 	.of_match = uis8910_serial_ids,
-	.ofdata_to_platdata = uis8910_serial_ofdata_to_platdata,
-	.platdata_auto_alloc_size = sizeof(struct uis8910_serial_platdata),
+	.of_to_plat = uis8910_serial_of_to_plat,
+	.plat_auto = sizeof(struct uis8910_serial_plat),
 	.probe = uis8910_serial_probe,
 	.ops	= &uis8910_serial_ops,
 };
 #endif
 
-#ifdef CONFIG_DEBUG_UART_S5P
+#ifdef CONFIG_DEBUG_UART_UIS8910
 
 #include <debug_uart.h>
 
@@ -202,21 +180,18 @@ static inline void _debug_uart_init(void)
 {
 	struct uis8910_uart *uart = (struct uis8910_uart *)CONFIG_DEBUG_UART_BASE;
 
-	uis8910_serial_init(uart);
 	uis8910_serial_baud(uart, CONFIG_DEBUG_UART_CLOCK, CONFIG_BAUDRATE);
+	uis8910_serial_init(uart);
 }
 
 static inline void _debug_uart_putc(int ch)
 {
 	struct uis8910_uart *uart = (struct uis8910_uart *)CONFIG_DEBUG_UART_BASE;
 
-	while (readl(&uart->ufstat) & TX_FIFO_FULL);
-
-	writeb(ch, &uart->utxh);
+	while (readb(&uart->uart_txfifo_stat) == 0);
+	writeb(ch, &uart->uart_tx);
 }
 
 DEBUG_UART_FUNCS
-
-#endif
 
 #endif

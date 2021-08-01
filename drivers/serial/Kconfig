@@ -278,6 +278,12 @@ config DEBUG_UART_S5P
 	  will need to provide parameters to make this work. The driver will
 	  be available until the real driver-model serial is running.
 
+config DEBUG_UART_UIS8910
+	bool "Unisoc UIS8910"
+	depends on ARCH_UIS8910
+	help
+	  Select this to enable a debug UART using the serial_uis8910 driver.
+
 config DEBUG_UART_MESON
 	bool "Amlogic Meson"
 	depends on MESON_SERIAL

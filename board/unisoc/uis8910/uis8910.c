@@ -3,6 +3,22 @@
 #include <errno.h>
 #include <serial.h>
 
+void clock_init(void)
+{
+    //TODO
+}
+
+void psram_init(void)
+{
+    //TODO
+}
+
+void lowlevel_init(void)
+{
+    clock_init();
+    psram_init();
+}
+
 int board_init(void)
 {
 	return 0;

@@ -1,0 +1,12 @@
+if TARGET_UIS8910
+
+config SYS_BOARD
+  default "uis8910"
+
+config SYS_VENDOR
+  default "unisoc"
+
+config SYS_CONFIG_NAME
+  default "uis8910"
+
+endif

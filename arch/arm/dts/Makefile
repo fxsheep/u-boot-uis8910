@@ -63,6 +63,9 @@ dtb-$(CONFIG_ARCH_KIRKWOOD) += \
 	kirkwood-pogo_e02.dtb \
 	kirkwood-sheevaplug.dtb
 
+dtb-$(CONFIG_ARCH_UIS8910) += \
+	uis8910.dtb
+
 dtb-$(CONFIG_MACH_S900) += \
 	bubblegum_96.dtb
 dtb-$(CONFIG_MACH_S700) += \

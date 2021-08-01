@@ -1,0 +1,24 @@
+/dts-v1/;
+
+#include "skeleton.dtsi"
+
+/ {
+	model = "Unisoc UIS8910";
+	compatible = "Unisoc,uis8910", "rda,rda8910m";
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	serial@8816000 {
+		compatible = "unisoc,uis8910-uart";
+		reg = <0x8816000 0x1000>;
+	};
+
+	sram@800000 {
+		device_type = "memory";
+		reg = <0x800000 0x40000>;
+	};
+
+};
+

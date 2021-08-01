@@ -1,0 +1,18 @@
+if ARCH_UIS8910
+
+choice
+	prompt "UIS8910 board select"
+	optional
+
+config TARGET_UIS8910
+	bool "Support generic UIS8910"
+	select OF_CONTROL
+
+endchoice
+
+config SYS_SOC
+	default "uis8910"
+
+source "board/unisoc/uis8910/Kconfig"
+
+endif

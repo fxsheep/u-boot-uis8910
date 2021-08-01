@@ -879,6 +879,12 @@ config MT7620_SERIAL
 	  The UART driver for MediaTek MT7620 and earlier SoCs is *NOT*
 	  compatible with the ns16550a UART.
 
+config UIS8910_UART
+        bool "UIS8910 UART support"
+		depends on DM_SERIAL
+        help
+          Select this to enable UART for UIS8910.
+
 config MPC8XX_CONS
 	bool "Console driver for MPC8XX"
 	depends on MPC8xx

@@ -920,6 +920,13 @@ config ARCH_RMOBILE
 	imply SYS_THUMB_BUILD
 	imply ARCH_MISC_INIT if DISPLAY_CPUINFO
 
+config ARCH_UIS8910
+	bool "Support UIS8910/RDA8910"
+	select CPU_V7A
+	select DM
+	select DM_SERIAL
+	imply CMD_DM
+
 config ARCH_SNAPDRAGON
 	bool "Qualcomm Snapdragon SoCs"
 	select ARM64
@@ -2007,6 +2014,8 @@ source "arch/arm/mach-stm32mp/Kconfig"
 source "arch/arm/mach-sunxi/Kconfig"
 
 source "arch/arm/mach-tegra/Kconfig"
+
+source "arch/arm/mach-uis8910/Kconfig"
 
 source "arch/arm/mach-u8500/Kconfig"
 
